@@ -19,6 +19,8 @@ This file provides an overview of the slop-factory monorepo for AI assistants an
 
 ## Workspace Structure
 
+
+
 ```
 slop-factory/
 ├── CLAUDE.md                  # This file — workspace docs
