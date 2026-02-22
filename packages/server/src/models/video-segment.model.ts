@@ -11,7 +11,7 @@ export interface IVideoSegment extends Document {
   sourceKeyframeUrl: string
   videoUrl: string
   provider: 'freepik' | 'sora'
-  model: string
+  aiModel: string
   freepikTaskId: string
   durationSeconds: number
   status: 'queued' | 'generating' | 'generated' | 'approved' | 'rejected'
@@ -27,7 +27,7 @@ const VideoSegmentSchema = new Schema<IVideoSegment>(
     sourceKeyframeUrl: { type: String, required: true },
     videoUrl: { type: String, default: '' },
     provider: { type: String, enum: ['freepik', 'sora'], default: 'freepik' },
-    model: { type: String, default: 'kling-v2' },
+    aiModel: { type: String, default: 'kling-v2' },
     freepikTaskId: { type: String, default: '' },
     durationSeconds: { type: Number, required: true },
     status: { type: String, enum: ['queued', 'generating', 'generated', 'approved', 'rejected'], default: 'queued' },

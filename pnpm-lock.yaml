@@ -73,7 +73,7 @@ importers:
         specifier: ^1.4.5-lts.1
         version: 1.4.5-lts.2
       zod:
-        specifier: ^3.24.0
+        specifier: ^3.25.76
         version: 3.25.76
     devDependencies:
       '@types/cors':

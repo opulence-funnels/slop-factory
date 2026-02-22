@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useCallback, useEffect, useRef } from 'react'
-import type { Phase, CanvasState, ChatMessage, AdFormat, AdSection } from './components/types'
+import type { Phase, CanvasState, ChatMessage, AdFormat } from './components/types'
 import { SetupModal } from './components/SetupModal'
 import { ChatPanel } from './components/ChatPanel'
 import { Canvas } from './components/Canvas'

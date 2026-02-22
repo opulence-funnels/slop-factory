@@ -1,4 +1,4 @@
-import type { CanvasState, Phase, Conversation } from './types'
+import type { CanvasState, Phase } from './types'
 import { OfferCard } from './OfferCard'
 import { AvatarBriefCard } from './AvatarBriefCard'
 import { BriefCard } from './BriefCard'
