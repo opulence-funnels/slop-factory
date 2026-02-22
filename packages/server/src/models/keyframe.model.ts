@@ -10,7 +10,7 @@ export interface IKeyframe extends Document {
   variantIndex: number
   promptText: string
   imageUrl: string
-  freepikTaskId: string
+  generationTaskId: string
   status: 'generating' | 'generated' | 'selected' | 'rejected'
   createdAt: Date
 }
@@ -23,13 +23,13 @@ const KeyframeSchema = new Schema<IKeyframe>(
     variantIndex: { type: Number, required: true },
     promptText: { type: String, required: true },
     imageUrl: { type: String, default: '' },
-    freepikTaskId: { type: String, default: '' },
+    generationTaskId: { type: String, default: '' },
     status: { type: String, enum: ['generating', 'generated', 'selected', 'rejected'], default: 'generating' },
   },
   { timestamps: true },
 )
 
 KeyframeSchema.index({ conversationId: 1, section: 1, position: 1 })
-KeyframeSchema.index({ freepikTaskId: 1 })
+KeyframeSchema.index({ generationTaskId: 1 })
 
 export const Keyframe = mongoose.model<IKeyframe>('Keyframe', KeyframeSchema)

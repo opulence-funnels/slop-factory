@@ -6,7 +6,7 @@ import { Keyframe } from '../models/keyframe.model.js'
 import { VideoSegment } from '../models/video-segment.model.js'
 import { TransitionPrompt } from '../models/transition-prompt.model.js'
 import { Script } from '../models/script.model.js'
-import { downloadAndSave } from '../lib/freepik.js'
+import { downloadAndSave } from '../lib/google-imagen.js'
 import { buildOffer } from '../agents/offer-builder.js'
 import { buildAvatar } from '../agents/avatar-researcher.js'
 
@@ -151,7 +151,7 @@ router.get('/conversations', async (_req, res, next) => {
     const convs = await Conversation.find()
       .populate('offerId', 'name productName')
       .populate('avatarId', 'name')
-      .sort({ createdAt: -1 })
+      .sort({ updatedAt: -1 })
       .lean()
     res.json({ success: true, data: convs })
   } catch (err) {
@@ -232,32 +232,22 @@ router.put('/transition-prompts/:id', async (req, res, next) => {
   }
 })
 
-// ── Freepik Webhook ───────────────────────────────────────────────────────
+// ── Sora Video Webhook ───────────────────────────────────────────────────────
 
-router.post('/webhooks/freepik', async (req, res, next) => {
+router.post('/webhooks/sora', async (req, res, next) => {
   try {
     const { task_id, status, data } = req.body as {
       task_id: string
       status: string
-      data: { images?: Array<{ url: string }>; video?: { url: string } }
+      data: { video?: { url: string } }
     }
 
     if (status !== 'completed') {
       return res.json({ ok: true })
     }
 
-    // Try keyframe
-    const keyframe = await Keyframe.findOne({ freepikTaskId: task_id })
-    if (keyframe && data.images?.[0]?.url) {
-      const localUrl = await downloadAndSave(data.images[0].url, 'keyframes')
-      keyframe.imageUrl = localUrl
-      keyframe.status = 'generated'
-      await keyframe.save()
-      return res.json({ ok: true })
-    }
-
     // Try video segment
-    const segment = await VideoSegment.findOne({ freepikTaskId: task_id })
+    const segment = await VideoSegment.findOne({ generationTaskId: task_id })
     if (segment && data.video?.url) {
       const localUrl = await downloadAndSave(data.video.url, 'videos')
       segment.videoUrl = localUrl

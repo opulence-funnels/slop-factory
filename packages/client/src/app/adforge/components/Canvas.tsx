@@ -1,7 +1,8 @@
-import type { CanvasState, Phase } from './types'
+import type { CanvasState, Phase, AdSection } from './types'
 import { OfferCard } from './OfferCard'
 import { AvatarBriefCard } from './AvatarBriefCard'
 import { BriefCard } from './BriefCard'
+import { HookOptionsCard } from './HookOptionsCard'
 import { ScriptCards } from './ScriptCards'
 import { ConsistencyLock } from './ConsistencyLock'
 import { KeyframeSelector } from './KeyframeSelector'
@@ -16,8 +17,12 @@ interface Props {
   currentKfSection?: string
   currentKfPosition?: string
   onApproveScript: (id: string) => void
+  onRequestScriptRewrite: (id: string, section: AdSection) => void
+  onApproveAllScripts: () => void
   onSelectKeyframe: (id: string) => void
   onLockConsistency: () => void
+  onSelectHook: (id: string) => void
+  onEditHook: (id: string, newText: string) => void
 }
 
 export function Canvas({
@@ -26,12 +31,70 @@ export function Canvas({
   currentKfSection,
   currentKfPosition,
   onApproveScript,
+  onRequestScriptRewrite,
+  onApproveAllScripts,
   onSelectKeyframe,
   onLockConsistency,
+  onSelectHook,
+  onEditHook,
 }: Props) {
-  const { offer, avatar, scripts, keyframes, transitions, segments, conversation } = canvas
+  const { offer, avatar, hookOptions, scripts, keyframes, transitions, segments, conversation } = canvas
 
   const renderContent = () => {
+    // Count selected keyframes
+    const selectedKeyframeCount = keyframes.filter((kf) => kf.status === 'selected').length
+    const allKeyframesSelected = selectedKeyframeCount >= 15
+
+    // Priority 0: Show storyboard if it exists (regardless of keyframe count)
+    if (conversation?.storyboard && conversation.storyboard.sections?.length > 0) {
+      return <StoryboardView storyboard={conversation.storyboard} />
+    }
+
+    // Priority 0.5: Show loading state when all keyframes selected but no storyboard yet
+    if (allKeyframesSelected) {
+      return (
+        <div style={{ textAlign: 'center', color: '#a29bfe' }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>🎬</div>
+          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>All 15 Keyframes Selected!</div>
+          <div style={{ fontSize: 12, color: '#7a7a95' }}>Assembling storyboard...</div>
+          <div style={{ fontSize: 10, color: '#5a5a75', marginTop: 16 }}>
+            Say &quot;create storyboard&quot; or &quot;assemble storyboard&quot; to the copilot
+          </div>
+        </div>
+      )
+    }
+
+    // Priority 1: Show keyframes if we're in keyframe selection mode
+    if (keyframes && keyframes.length > 0) {
+      const section = (currentKfSection ?? 'hook') as any
+      const position = (currentKfPosition ?? 'start') as 'start' | 'middle' | 'end'
+      const currentKfs = keyframes.filter(
+        (kf) => kf.section === section && kf.position === position,
+      )
+
+      return (
+        <KeyframeSelector
+          section={section}
+          position={position}
+          keyframes={currentKfs}
+          onSelect={onSelectKeyframe}
+          completedCount={selectedKeyframeCount}
+          totalCount={15}
+        />
+      )
+    }
+
+    // Priority 2: Show hook options if they exist
+    if (hookOptions && hookOptions.length > 0) {
+      return <HookOptionsCard hookOptions={hookOptions} onSelect={onSelectHook} onEdit={onEditHook} />
+    }
+
+    // Priority 3: Show scripts if they exist (only if not all approved)
+    const allScriptsApproved = scripts.length > 0 && scripts.every((s) => s.status === 'approved')
+    if (scripts && scripts.length > 0 && !allScriptsApproved) {
+      return <ScriptCards scripts={scripts} onApprove={onApproveScript} onRequestRewrite={onRequestScriptRewrite} onApproveAll={onApproveAllScripts} />
+    }
+
     if (phase === 0) {
       if (offer) return <OfferCard offer={offer} />
       if (avatar) return <AvatarBriefCard avatar={avatar} />
@@ -45,10 +108,6 @@ export function Canvas({
 
     if (phase === 1 && conversation) {
       return <BriefCard conversation={conversation} offer={offer} avatar={avatar} />
-    }
-
-    if (phase === 2) {
-      return <ScriptCards scripts={scripts} onApprove={onApproveScript} />
     }
 
     if (phase === 3 && conversation?.consistencySpec) {

@@ -66,7 +66,7 @@ colorPalette: 4-5 hex colors that define the visual palette`,
 
   const spec = {
     ...object,
-    status: 'locked' as const,
+    status: 'draft' as const,
   }
 
   await Conversation.findByIdAndUpdate(input.conversationId, {

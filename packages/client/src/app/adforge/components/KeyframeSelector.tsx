@@ -44,7 +44,7 @@ export function KeyframeSelector({
   const currentSectionIdx = ALL_SECTIONS.indexOf(section)
 
   return (
-    <div style={{ width: 600 }}>
+    <div style={{ width: '100%', maxWidth: 900, padding: '0 20px' }}>
       {/* Progress bar */}
       <div style={{ marginBottom: 14 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, marginBottom: 5 }}>
@@ -80,7 +80,7 @@ export function KeyframeSelector({
       </div>
 
       {/* Options grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
         {keyframes.map((kf) => {
           const isGenerating = kf.status === 'generating'
           const isSelected = kf.status === 'selected'
@@ -91,16 +91,17 @@ export function KeyframeSelector({
               key={kf._id}
               onClick={() => !isGenerating && !isRejected && onSelect(kf._id)}
               style={{
-                height: 110,
-                borderRadius: 10,
-                border: `2px solid ${isSelected ? '#00e676' : '#2a2a3d'}`,
+                aspectRatio: '16 / 9',
+                minHeight: 180,
+                borderRadius: 12,
+                border: `3px solid ${isSelected ? '#00e676' : '#2a2a3d'}`,
                 position: 'relative',
                 overflow: 'hidden',
                 cursor: isGenerating ? 'wait' : isRejected ? 'default' : 'pointer',
-                opacity: isRejected ? 0.2 : 1,
+                opacity: isRejected ? 0.3 : 1,
                 transform: isSelected ? 'scale(1.02)' : 'scale(1)',
                 transition: 'all 0.3s',
-                boxShadow: isSelected ? '0 0 20px rgba(0,230,118,0.12)' : 'none',
+                boxShadow: isSelected ? '0 0 24px rgba(0,230,118,0.25)' : '0 2px 8px rgba(0,0,0,0.3)',
               }}
             >
               {kf.imageUrl ? (
@@ -116,23 +117,38 @@ export function KeyframeSelector({
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
                   {isGenerating ? (
-                    <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10 }}>Generating...</span>
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, marginBottom: 4 }}>Generating...</div>
+                      <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10 }}>Option {kf.variantIndex + 1}</div>
+                    </div>
                   ) : (
-                    <span style={{ color: 'rgba(255,255,255,0.25)', fontSize: 18, fontWeight: 700 }}>
+                    <span style={{ color: 'rgba(255,255,255,0.25)', fontSize: 24, fontWeight: 700 }}>
                       {kf.variantIndex + 1}
                     </span>
                   )}
                 </div>
               )}
+              {/* Always show checkmark for selected keyframes */}
               {isSelected && (
                 <div style={{
-                  position: 'absolute', top: 7, right: 7,
-                  width: 20, height: 20, background: '#00e676',
+                  position: 'absolute', top: 10, right: 10,
+                  width: 28, height: 28, background: '#00e676',
                   borderRadius: '50%', display: 'flex',
                   alignItems: 'center', justifyContent: 'center',
-                  fontSize: 10, zIndex: 2,
+                  fontSize: 14, fontWeight: 'bold', color: '#000',
+                  zIndex: 10, boxShadow: '0 2px 8px rgba(0,230,118,0.5)',
                 }}>
                   ✓
+                </div>
+              )}
+              {/* Option number badge */}
+              {!isSelected && kf.imageUrl && (
+                <div style={{
+                  position: 'absolute', bottom: 8, left: 8,
+                  background: 'rgba(0,0,0,0.7)', borderRadius: 4,
+                  padding: '2px 8px', fontSize: 10, color: '#fff',
+                }}>
+                  Option {kf.variantIndex + 1}
                 </div>
               )}
             </div>

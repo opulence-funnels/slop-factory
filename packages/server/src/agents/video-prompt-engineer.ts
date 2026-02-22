@@ -20,10 +20,9 @@ export async function generateVideoPrompt(input: {
   targetKeyframeUrl: string
   durationSeconds: number
   adFormat: AdFormat
-  provider?: 'freepik' | 'sora'
 }) {
-  const provider = input.provider ?? 'freepik'
-  const model = provider === 'freepik' ? 'kling-v2' : 'sora-2-pro'
+  const provider = 'sora'
+  const model = 'sora-2-pro'
 
   const { object } = await generateObject({
     model: anthropic('claude-sonnet-4-5'),
@@ -54,8 +53,8 @@ apiParams: Provider-specific params (duration, etc.) as a flat object`,
     sourceKeyframeUrl: input.sourceKeyframeUrl,
     videoUrl: '',
     provider,
-    model: object.model,
-    freepikTaskId: '',
+    aiModel: object.model,
+    generationTaskId: '',
     durationSeconds: input.durationSeconds,
     status: 'queued',
   })

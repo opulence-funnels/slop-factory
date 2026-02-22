@@ -10,9 +10,9 @@ export interface IVideoSegment extends Document {
   videoPrompt: string
   sourceKeyframeUrl: string
   videoUrl: string
-  provider: 'freepik' | 'sora'
+  provider: 'sora'
   aiModel: string
-  freepikTaskId: string
+  generationTaskId: string
   durationSeconds: number
   status: 'queued' | 'generating' | 'generated' | 'approved' | 'rejected'
   createdAt: Date
@@ -26,9 +26,9 @@ const VideoSegmentSchema = new Schema<IVideoSegment>(
     videoPrompt: { type: String, required: true },
     sourceKeyframeUrl: { type: String, required: true },
     videoUrl: { type: String, default: '' },
-    provider: { type: String, enum: ['freepik', 'sora'], default: 'freepik' },
-    aiModel: { type: String, default: 'kling-v2' },
-    freepikTaskId: { type: String, default: '' },
+    provider: { type: String, enum: ['sora'], default: 'sora' },
+    aiModel: { type: String, default: 'sora-2-pro' },
+    generationTaskId: { type: String, default: '' },
     durationSeconds: { type: Number, required: true },
     status: { type: String, enum: ['queued', 'generating', 'generated', 'approved', 'rejected'], default: 'queued' },
   },
@@ -36,6 +36,6 @@ const VideoSegmentSchema = new Schema<IVideoSegment>(
 )
 
 VideoSegmentSchema.index({ conversationId: 1, section: 1 })
-VideoSegmentSchema.index({ freepikTaskId: 1 })
+VideoSegmentSchema.index({ generationTaskId: 1 })
 
 export const VideoSegment = mongoose.model<IVideoSegment>('VideoSegment', VideoSegmentSchema)

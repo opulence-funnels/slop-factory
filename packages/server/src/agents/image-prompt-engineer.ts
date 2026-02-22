@@ -1,7 +1,6 @@
 import { generateObject } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { z } from 'zod'
-import { improvePrompt } from '../lib/freepik.js'
 import type { AdSection, AdFormat } from '@slop-factory/shared'
 import type { IConsistencySpec } from '../models/conversation.model.js'
 
@@ -54,17 +53,5 @@ Rules:
 Return exactly 4 prompts.`,
   })
 
-  // Optionally improve prompts via Freepik API (best effort)
-  const enhanced = await Promise.all(
-    object.prompts.map(async (p) => {
-      try {
-        const improved = await improvePrompt(p.promptText)
-        return { ...p, promptText: improved }
-      } catch {
-        return p
-      }
-    }),
-  )
-
-  return enhanced
+  return object.prompts
 }
