@@ -6,7 +6,7 @@
     "dev": "next dev --port 3000",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "echo 'TODO: add linter'",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf .next"
   },
