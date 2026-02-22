@@ -23,6 +23,7 @@ export async function writeScript(input: {
   avatar: IAvatar
   adFormat: AdFormat
   durationTargets: Record<AdSection, number>
+  selectedHookText?: string
 }) {
   const formatInstructions =
     input.adFormat === 'ugc'
@@ -52,7 +53,7 @@ AVATAR: ${input.avatar.name}
 - Objections: ${input.avatar.objections.join('; ')}
 
 SECTIONS (write all 5):
-1. Hook (${input.durationTargets['hook']}s): Bold attention-grabbing opening. Question or bold claim using avatar's language.
+1. Hook (${input.durationTargets['hook']}s): ${input.selectedHookText ? `USE THIS EXACT HOOK: "${input.selectedHookText}"` : 'Bold attention-grabbing opening. Question or bold claim using avatar\'s language.'}
 2. Problem (${input.durationTargets['problem']}s): Dramatize their pain. Use trigger event. Make them feel seen.
 3. Solution (${input.durationTargets['solution']}s): Introduce product as the answer. Mechanism. Why it works when others didn't.
 4. Social Proof (${input.durationTargets['social_proof']}s): Testimonial/stat. Third-party validation. Specific, believable.

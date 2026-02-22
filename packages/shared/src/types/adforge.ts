@@ -136,7 +136,7 @@ export interface Keyframe {
   variantIndex: number
   promptText: string
   imageUrl: string
-  freepikTaskId: string
+  generationTaskId: string
   status: 'generating' | 'generated' | 'selected' | 'rejected'
   createdAt: string
 }
@@ -161,9 +161,9 @@ export interface VideoSegment {
   videoPrompt: string
   sourceKeyframeUrl: string
   videoUrl: string
-  provider: 'freepik' | 'sora'
+  provider: 'sora'
   model: string
-  freepikTaskId: string
+  generationTaskId: string
   durationSeconds: number
   status: 'queued' | 'generating' | 'generated' | 'approved' | 'rejected'
   createdAt: string

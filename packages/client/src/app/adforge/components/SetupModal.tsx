@@ -240,8 +240,8 @@ export function SetupModal({ onStart, onDismiss }: Props) {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
             <h2 style={{ fontSize: 17, color: '#e4e4ef', margin: 0 }}>New Ad Campaign</h2>
             <button onClick={onDismiss} style={{
-              background: 'none', border: 'none', color: '#3a3a5d',
-              fontSize: 20, cursor: 'pointer', lineHeight: 1, padding: '0 4px',
+              background: 'none', border: 'none', color: '#7a7a95',
+              fontSize: 22, cursor: 'pointer', lineHeight: 1, padding: '0 4px',
             }}>×</button>
           </div>
             <p style={{ fontSize: 11, color: '#7a7a95', marginBottom: 20 }}>

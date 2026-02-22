@@ -1,6 +1,31 @@
 import { streamText, tool } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { z } from 'zod'
+import mongoose from 'mongoose'
+
+// Models
+import { Conversation } from '../models/conversation.model.js'
+import { Offer } from '../models/offer.model.js'
+import { Avatar } from '../models/avatar.model.js'
+import { Script } from '../models/script.model.js'
+import { Keyframe } from '../models/keyframe.model.js'
+import { TransitionPrompt } from '../models/transition-prompt.model.js'
+import { VideoSegment } from '../models/video-segment.model.js'
+
+// Agents
+import { buildOffer as buildOfferAgent } from './offer-builder.js'
+import { buildAvatar as buildAvatarAgent } from './avatar-researcher.js'
+import { writeScript } from './script-writer.js'
+import { lockConsistency as lockConsistencyAgent } from './consistency-enforcer.js'
+import { generateKeyframePrompts as generateKeyframePromptsAgent } from './image-prompt-engineer.js'
+import { writeTransitionPrompts } from './transition-prompt-writer.js'
+import { assembleStoryboard as assembleStoryboardAgent } from './storyboard-architect.js'
+import { generateVideoPrompt } from './video-prompt-engineer.js'
+
+// Lib
+import * as googleImagen from '../lib/google-imagen.js'
+import * as falAi from '../lib/fal-ai.js'
+import * as sora from '../lib/sora.js'
 
 // Phase constants
 export const AD_SECTIONS = ['hook', 'problem', 'solution', 'social_proof', 'cta'] as const
@@ -35,16 +60,23 @@ Every ad has 5 sequential sections:
 - **UGC Ad**: User-generated content style. Informal, phone-camera, talking-head, raw/authentic feel.
 - **Story Movie Ad**: Cinematic narrative. Polished, scene changes, environmental storytelling, actors in relatable situations.
 
-## Workflow Phases (STRICT ORDER - NEVER SKIP)
-1. **Setup**: User selects or creates Offer + Avatar + Ad Format
-2. **Brief Confirmation**: Review locked parameters, confirm duration allocation
-3. **Script Generation**: Generate copy for all 5 sections, get approval
-4. **Consistency Lock**: Define and lock avatar appearance + environment specs
-5. **Keyframe Selection**: For each section, generate START/MIDDLE/END keyframes (4 options each, user picks 1)
-6. **Storyboard Review**: Assemble all keyframes + transition prompts, get approval
-7. **Video Generation**: Generate video segments from keyframes
-8. **Review & Iterate**: User reviews video, can regenerate segments
-9. **Export**: Final download
+## Workflow Phases
+1. **Setup**: User selects or creates Offer + Avatar + Ad Format (ALREADY DONE if campaign context is provided)
+2. **Hook Selection**: Generate 4 hook options for user to choose from using generateHookOptions tool
+3. **Script Generation**: Once hook is selected, generate full script for all 5 sections
+4. **Keyframe Selection**: After scripts approved, use generateKeyframeImagesDirect to generate 4 image options directly
+5. **Storyboard Review**: Assemble all keyframes + transition prompts
+6. **Video Generation**: Generate video segments from keyframes
+7. **Export**: Final download
+
+NOTE: Skip the consistency spec phase - go directly from script approval to keyframe generation.
+
+## IMPORTANT: Hook Generation Flow
+When the user asks to "create hooks" or "generate hooks" or similar:
+1. FIRST use the generateHookOptions tool to create 4 hook variations
+2. The hook options will appear in the canvas for the user to review
+3. WAIT for the user to select their preferred hook
+4. ONLY THEN proceed to generateScript with the full ad copy
 
 ## Rules
 - ALWAYS check current phase before taking action. Refuse to skip ahead.
@@ -53,8 +85,76 @@ Every ad has 5 sequential sections:
 - Be concise but helpful. Explain what's happening and what comes next.
 - If the user asks to do something out of order, explain why the workflow requires the current phase first.
 
-## Canvas Updates
-When you complete a tool call that produces visual content (offer card, avatar brief, scripts, keyframes, etc.), mention that the canvas has been updated so the user knows to look at the right panel.`
+## CRITICAL: Canvas Display Rules
+- **DO NOT output full script content, hook text, or visual descriptions in chat messages**
+- All generated content (hooks, scripts, keyframes) is automatically displayed in the canvas on the right
+- After calling a generation tool, simply say something like "I've generated your [content type] - check the canvas to review them. Let me know if you'd like any changes."
+- Keep chat messages SHORT and conversational - the user sees the real content in the canvas
+- Example good response after generateScript: "Your 5-part script is ready in the canvas. Take a look and click 'Approve All' when you're happy with it, or let me know which sections need revisions."
+- Example bad response: [Outputting the full script text in the chat] - DON'T do this!
+
+## Keyframe Selection Flow (15 rounds)
+After scripts are approved, immediately begin keyframe generation:
+1. Start with Hook section, START position
+2. Call generateKeyframeImagesDirect to generate 4 images directly (this skips consistency spec)
+3. The 4 images appear in the canvas for user selection
+4. After user selects one, move to next position (start → middle → end) then next section
+5. Total: 5 sections × 3 positions = 15 rounds
+
+IMPORTANT: When user says "approve all scripts" or "skip consistency" or similar:
+- Use generateKeyframeImagesDirect tool immediately - do NOT use generateConsistencySpec or lockConsistency
+- This tool generates images directly from the script's visual description
+- Start with Hook section, START position
+
+## Storyboard Assembly (CRITICAL)
+After all 15 keyframes are selected (CTA END is the last one):
+1. The user will ask to "create storyboard", "assemble storyboard", or similar
+2. You MUST call the **assembleStoryboard** tool with just the conversationId
+3. This tool assembles all selected keyframes and generates transition prompts
+4. The storyboard will appear in the canvas for review
+5. Do NOT just say the storyboard is ready - you must CALL THE TOOL
+
+Example:
+- User: "create storyboard"
+- You: Call assembleStoryboard tool, then say "Storyboard assembled! Review it in the canvas."
+
+NEVER skip the assembleStoryboard tool call - the canvas depends on the tool result to display the storyboard.`
+
+// Helper function to generate hook text based on style
+function generateHookText(
+  offer: { productName?: string; dreamOutcome?: string; keySellingPoints?: string[]; summary?: string },
+  avatar: { painPoints?: string[]; aspirations?: string[]; name?: string },
+  style: string,
+  adFormat: string
+): string {
+  const product = offer.productName || 'this solution'
+  const outcome = offer.dreamOutcome || 'achieve your goals'
+  const painPoint = avatar.painPoints?.[0] || 'struggling with this problem'
+  const aspiration = avatar.aspirations?.[0] || 'success'
+
+  const isUgc = adFormat === 'ugc'
+
+  switch (style) {
+    case 'Question':
+      return isUgc
+        ? `What if I told you there's a way to ${outcome.toLowerCase()} without ${painPoint.toLowerCase()}?`
+        : `What would your life look like if you could ${outcome.toLowerCase()}?`
+    case 'Bold Claim':
+      return isUgc
+        ? `I used to ${painPoint.toLowerCase()}... until I discovered ${product}. Here's what changed.`
+        : `${product} is revolutionizing the way people ${outcome.toLowerCase()}.`
+    case 'Pain Point':
+      return isUgc
+        ? `Tired of ${painPoint.toLowerCase()}? Yeah, me too. But not anymore.`
+        : `Every day, thousands of people struggle with ${painPoint.toLowerCase()}. There's a better way.`
+    case 'Transformation':
+      return isUgc
+        ? `3 months ago, I was ${painPoint.toLowerCase()}. Today? ${aspiration}. Let me show you how.`
+        : `From ${painPoint.toLowerCase()} to ${aspiration.toLowerCase()} — this is the ${product} story.`
+    default:
+      return `Discover how ${product} can help you ${outcome.toLowerCase()}.`
+  }
+}
 
 // Tool definitions using AI SDK v4 syntax
 export const orchestratorTools = {
@@ -66,15 +166,54 @@ export const orchestratorTools = {
     }),
     execute: async ({ conversationId }) => {
       console.log(`[tool] getConversationState: ${conversationId}`)
+
+      // Try to find existing conversation
+      if (!mongoose.Types.ObjectId.isValid(conversationId)) {
+        return {
+          phase: 'setup',
+          offer: null,
+          avatar: null,
+          adFormat: null,
+          scripts: [],
+          consistencySpec: null,
+          keyframes: [],
+          storyboard: null,
+        }
+      }
+
+      const conversation = await Conversation.findById(conversationId)
+        .populate('offerId')
+        .populate('avatarId')
+        .lean()
+
+      if (!conversation) {
+        return {
+          phase: 'setup',
+          offer: null,
+          avatar: null,
+          adFormat: null,
+          scripts: [],
+          consistencySpec: null,
+          keyframes: [],
+          storyboard: null,
+        }
+      }
+
+      // Fetch related data
+      const [scripts, keyframes] = await Promise.all([
+        Script.find({ conversationId }).lean(),
+        Keyframe.find({ conversationId, status: { $in: ['generated', 'selected'] } }).lean(),
+      ])
+
       return {
-        phase: 'setup',
-        offer: null,
-        avatar: null,
-        adFormat: null,
-        scripts: [],
-        consistencySpec: null,
-        keyframes: [],
-        storyboard: null,
+        phase: conversation.status,
+        offer: conversation.offerId,
+        avatar: conversation.avatarId,
+        adFormat: conversation.adFormat,
+        scripts,
+        consistencySpec: conversation.consistencySpec,
+        keyframes,
+        storyboard: conversation.storyboard,
       }
     },
   }),
@@ -97,7 +236,22 @@ export const orchestratorTools = {
     }),
     execute: async ({ conversationId, phase }) => {
       console.log(`[tool] updateConversationPhase: ${conversationId} -> ${phase}`)
-      return { success: true, phase }
+
+      if (!mongoose.Types.ObjectId.isValid(conversationId)) {
+        return { success: false, error: 'Invalid conversation ID' }
+      }
+
+      const updated = await Conversation.findByIdAndUpdate(
+        conversationId,
+        { status: phase },
+        { new: true },
+      )
+
+      if (!updated) {
+        return { success: false, error: 'Conversation not found' }
+      }
+
+      return { success: true, phase: updated.status }
     },
   }),
 
@@ -113,16 +267,24 @@ export const orchestratorTools = {
     }),
     execute: async (params) => {
       console.log(`[tool] buildOffer:`, params)
-      return {
-        id: 'offer_placeholder',
-        name: params.productName,
+
+      const offer = await buildOfferAgent({
         productName: params.productName,
-        dreamOutcome: 'Placeholder dream outcome',
-        perceivedLikelihood: 'High - proven system',
-        timeDelay: 'See results in 30 days',
-        effortSacrifice: 'Minimal effort required',
-        summary: `${params.productName} helps ${params.targetAudience} achieve their goals.`,
-        keySellingPoints: ['Point 1', 'Point 2', 'Point 3'],
+        productDescription: params.productDescription,
+        targetAudience: params.targetAudience,
+        userNotes: params.userNotes,
+      })
+
+      return {
+        id: offer._id.toString(),
+        name: offer.name,
+        productName: offer.productName,
+        dreamOutcome: offer.dreamOutcome,
+        perceivedLikelihood: offer.perceivedLikelihood,
+        timeDelay: offer.timeDelay,
+        effortSacrifice: offer.effortSacrifice,
+        summary: offer.summary,
+        keySellingPoints: offer.keySellingPoints,
       }
     },
   }),
@@ -138,36 +300,83 @@ export const orchestratorTools = {
     }),
     execute: async (params) => {
       console.log(`[tool] buildAvatar:`, params)
+
+      // Fetch the offer to pass to the avatar builder
+      const offer = await Offer.findById(params.offerId)
+      if (!offer) {
+        throw new Error(`Offer not found: ${params.offerId}`)
+      }
+
+      const avatar = await buildAvatarAgent({
+        offer,
+        targetDescription: params.targetDescription,
+        industry: params.industry,
+        userNotes: params.userNotes,
+      })
+
       return {
-        id: 'avatar_placeholder',
-        name: 'Target Customer',
-        demographics: {
-          age: '30-45',
-          income: '$75k-150k',
-          location: 'Urban US',
-          jobTitle: 'Professional',
-          gender: 'Mixed',
-        },
-        psychographics: {
-          values: ['Success', 'Efficiency', 'Growth'],
-          fears: ['Falling behind', 'Wasting time', 'Missing opportunities'],
-          worldview: 'Hard work should lead to results',
-        },
-        painPoints: ['Pain point 1', 'Pain point 2'],
-        aspirations: ['Aspiration 1', 'Aspiration 2'],
-        fullBriefMd: '# Avatar Brief\n\nPlaceholder content...',
+        id: avatar._id.toString(),
+        name: avatar.name,
+        demographics: avatar.demographics,
+        psychographics: avatar.psychographics,
+        painPoints: avatar.painPoints,
+        aspirations: avatar.aspirations,
+        fullBriefMd: avatar.fullBriefMd,
       }
     },
   }),
 
-  // === Script Tools ===
-  generateScript: tool({
-    description: 'Generate ad copy for all 5 sections based on offer, avatar, and format.',
+  // === Hook Options Tool ===
+  generateHookOptions: tool({
+    description: 'Generate 4 hook options for the user to choose from. Use this FIRST when the user asks to create hooks, before generating the full script.',
     parameters: z.object({
       conversationId: z.string(),
       offerId: z.string(),
       avatarId: z.string(),
       adFormat: z.enum(['ugc', 'story_movie']),
+    }),
+    execute: async (params) => {
+      console.log(`[tool] generateHookOptions:`, params)
+
+      // Fetch offer and avatar
+      const [offer, avatar] = await Promise.all([
+        Offer.findById(params.offerId),
+        Avatar.findById(params.avatarId),
+      ])
+
+      if (!offer) throw new Error(`Offer not found: ${params.offerId}`)
+      if (!avatar) throw new Error(`Avatar not found: ${params.avatarId}`)
+
+      // Generate 4 different hook styles
+      const hookStyles = [
+        { style: 'Question', description: 'Opens with a provocative question that makes viewer stop scrolling' },
+        { style: 'Bold Claim', description: 'Starts with a surprising statistic or bold statement' },
+        { style: 'Pain Point', description: 'Leads with the viewer\'s frustration or struggle' },
+        { style: 'Transformation', description: 'Shows the before/after or possibility' },
+      ]
+
+      const hooks = hookStyles.map((hookStyle, index) => ({
+        _id: `hook-${Date.now()}-${index}`,
+        index,
+        hookText: generateHookText(offer, avatar, hookStyle.style, params.adFormat),
+        style: hookStyle.style,
+        rationale: hookStyle.description,
+        status: 'pending' as const,
+      }))
+
+      return { hooks }
+    },
+  }),
+
+  // === Script Tools ===
+  generateScript: tool({
+    description: 'Generate ad copy for all 5 sections based on offer, avatar, and format. Use AFTER the user has selected their preferred hook. Pass the selected hook text to use it.',
+    parameters: z.object({
+      conversationId: z.string(),
+      offerId: z.string(),
+      avatarId: z.string(),
+      adFormat: z.enum(['ugc', 'story_movie']),
+      selectedHookText: z.string().optional().describe('The hook text the user selected, to use as the hook section'),
       durationTargets: z
         .object({
           hook: z.number(),
@@ -180,14 +389,42 @@ export const orchestratorTools = {
     }),
     execute: async (params) => {
       console.log(`[tool] generateScript:`, params)
+
+      // Fetch offer and avatar
+      const [offer, avatar] = await Promise.all([
+        Offer.findById(params.offerId),
+        Avatar.findById(params.avatarId),
+      ])
+
+      if (!offer) throw new Error(`Offer not found: ${params.offerId}`)
+      if (!avatar) throw new Error(`Avatar not found: ${params.avatarId}`)
+
+      // Default duration targets
+      const durationTargets = params.durationTargets ?? {
+        hook: 5,
+        problem: 13,
+        solution: 14,
+        social_proof: 14,
+        cta: 14,
+      }
+
+      const scripts = await writeScript({
+        conversationId: params.conversationId,
+        offer,
+        avatar,
+        adFormat: params.adFormat,
+        durationTargets,
+        selectedHookText: params.selectedHookText,
+      })
+
       return {
-        scripts: AD_SECTIONS.map((section) => ({
-          id: `script_${section}`,
-          section,
-          copyText: `[${section.toUpperCase()}] Placeholder copy text...`,
-          visualDescription: `Visual description for ${section}...`,
-          durationSeconds: section === 'hook' ? 5 : 13,
-          status: 'draft',
+        scripts: scripts.map((s) => ({
+          _id: s._id.toString(),
+          section: s.section,
+          copyText: s.copyText,
+          visualDescription: s.visualDescription,
+          durationSeconds: s.durationSeconds,
+          status: s.status,
         })),
       }
     },
@@ -201,7 +438,23 @@ export const orchestratorTools = {
     }),
     execute: async ({ scriptId, section }) => {
       console.log(`[tool] approveScript: ${scriptId} (${section})`)
-      return { success: true, scriptId, section, status: 'approved' }
+
+      const updated = await Script.findByIdAndUpdate(
+        scriptId,
+        { status: 'approved' },
+        { new: true },
+      )
+
+      if (!updated) {
+        return { success: false, error: 'Script not found' }
+      }
+
+      return {
+        success: true,
+        scriptId: updated._id.toString(),
+        section: updated.section,
+        status: updated.status,
+      }
     },
   }),
 
@@ -215,30 +468,28 @@ export const orchestratorTools = {
     }),
     execute: async (params) => {
       console.log(`[tool] generateConsistencySpec:`, params)
+
+      // Fetch avatar and scripts
+      const [avatar, scripts] = await Promise.all([
+        Avatar.findById(params.avatarId),
+        Script.find({ conversationId: params.conversationId }),
+      ])
+
+      if (!avatar) throw new Error(`Avatar not found: ${params.avatarId}`)
+
+      const spec = await lockConsistencyAgent({
+        conversationId: params.conversationId,
+        avatar,
+        scripts,
+        adFormat: params.adFormat,
+      })
+
       return {
-        avatarSpec: {
-          age: '35',
-          gender: 'female',
-          hairColor: 'dark brown',
-          hairStyle: 'shoulder-length, natural waves',
-          skinTone: 'medium',
-          clothing: 'casual professional - blazer over t-shirt',
-          distinguishingFeatures: 'warm smile, expressive eyes',
-          fullDescription:
-            'A 35-year-old woman with dark brown shoulder-length wavy hair, medium skin tone, wearing a casual blazer over a t-shirt, with a warm approachable smile.',
-        },
-        environmentSpec: {
-          location: 'modern home office',
-          timeOfDay: 'daytime, natural light',
-          lighting: 'soft natural light from window, warm tone',
-          keyProps: ['laptop', 'coffee mug', 'plant'],
-          colorScheme: ['warm neutrals', 'soft greens', 'white'],
-          fullDescription:
-            'A modern home office with natural daylight streaming through a window, featuring a clean desk with laptop, coffee mug, and green plant accents.',
-        },
-        visualStyle: params.adFormat === 'ugc' ? 'authentic, phone-camera aesthetic' : 'cinematic, polished',
-        colorPalette: ['#F5F5F0', '#4A7C59', '#2C3E50', '#E8D5B7'],
-        status: 'draft',
+        avatarSpec: spec.avatarSpec,
+        environmentSpec: spec.environmentSpec,
+        visualStyle: spec.visualStyle,
+        colorPalette: spec.colorPalette,
+        status: spec.status,
       }
     },
   }),
@@ -250,11 +501,160 @@ export const orchestratorTools = {
     }),
     execute: async ({ conversationId }) => {
       console.log(`[tool] lockConsistency: ${conversationId}`)
+
+      const updated = await Conversation.findByIdAndUpdate(
+        conversationId,
+        { 'consistencySpec.status': 'locked' },
+        { new: true },
+      )
+
+      if (!updated) {
+        return { success: false, error: 'Conversation not found' }
+      }
+
       return { success: true, status: 'locked' }
     },
   }),
 
   // === Keyframe Tools ===
+
+  // Direct image generation tool - bypasses consistency spec for quick testing
+  generateKeyframeImagesDirect: tool({
+    description: 'Generate keyframe images directly from script visual description. Use this to skip consistency spec and go straight to image generation. Returns 4 image options. For sequential storyboard positions (middle, end), it references the previously selected keyframe for visual continuity.',
+    parameters: z.object({
+      conversationId: z.string(),
+      section: z.enum(['hook', 'problem', 'solution', 'social_proof', 'cta']),
+      position: z.enum(['start', 'middle', 'end']),
+    }),
+    execute: async (params) => {
+      console.log(`[tool] generateKeyframeImagesDirect:`, params)
+
+      // Fetch script for visual description
+      const script = await Script.findOne({
+        conversationId: params.conversationId,
+        section: params.section
+      })
+
+      if (!script) throw new Error(`Script not found for section: ${params.section}`)
+
+      // Find previously selected keyframe for storyboard continuity
+      // For START position, look at END of previous section
+      // For MIDDLE/END position, look at previous position in same section
+      let referenceKeyframe = null
+      if (params.position === 'start') {
+        // Look for the END keyframe of the previous section
+        const sectionOrder = ['hook', 'problem', 'solution', 'social_proof', 'cta']
+        const currentIdx = sectionOrder.indexOf(params.section)
+        if (currentIdx > 0) {
+          const prevSection = sectionOrder[currentIdx - 1]
+          referenceKeyframe = await Keyframe.findOne({
+            conversationId: params.conversationId,
+            section: prevSection,
+            position: 'end',
+            status: 'selected',
+          })
+        }
+      } else {
+        // Look for the previous position in the same section
+        const prevPosition = params.position === 'middle' ? 'start' : 'middle'
+        referenceKeyframe = await Keyframe.findOne({
+          conversationId: params.conversationId,
+          section: params.section,
+          position: prevPosition,
+          status: 'selected',
+        })
+      }
+
+      const referenceImageUrl = referenceKeyframe?.imageUrl || undefined
+      console.log(`[keyframe] Reference image for continuity:`, referenceImageUrl || 'none (first frame)')
+
+      // Build a base prompt optimized for photorealistic output
+      const basePrompt = script.visualDescription || `Professional ad scene for ${params.section} section`
+
+      // Add storyboard context to the prompt
+      const positionContext = params.position === 'start'
+        ? 'opening shot establishing the scene'
+        : params.position === 'middle'
+          ? 'mid-action sequence showing progression'
+          : 'concluding shot with emotional payoff'
+
+      // Generate 4 variations with photorealistic styling
+      const promptVariations = [
+        `${basePrompt}. ${positionContext}. Photorealistic, shot on RED camera, 8K resolution, cinematic color grading, shallow depth of field`,
+        `${basePrompt}. ${positionContext}. Hyper-realistic photography, natural lighting, professional commercial shoot, ARRI Alexa quality`,
+        `${basePrompt}. ${positionContext}. Ultra-realistic, documentary style, authentic human emotion, Sony A7R IV quality`,
+        `${basePrompt}. ${positionContext}. Photorealistic, golden hour lighting, lifestyle photography, Canon EOS R5 quality`,
+      ]
+
+      // Create keyframes and generate images
+      const keyframes = await Promise.all(
+        promptVariations.map(async (promptText, variantIndex) => {
+          // Create keyframe record
+          const keyframe = await Keyframe.create({
+            conversationId: params.conversationId,
+            section: params.section,
+            position: params.position,
+            variantIndex,
+            promptText,
+            imageUrl: '',
+            generationTaskId: '',
+            status: 'generating',
+          })
+
+          // Generate image async using fal.ai Flux Pro for hyper-realistic output
+          void (async () => {
+            try {
+              console.log(`[keyframe] Generating image ${variantIndex + 1}/4 for ${params.section}/${params.position}`)
+              const localUrl = await falAi.generateImage({
+                prompt: promptText,
+                referenceImageUrl,
+                aspectRatio: '16:9',
+              })
+              console.log(`[keyframe] Image ${variantIndex + 1} generated: ${localUrl}`)
+              await Keyframe.findByIdAndUpdate(keyframe._id, {
+                imageUrl: localUrl,
+                status: 'generated',
+              })
+            } catch (err) {
+              console.error(`[keyframe] fal.ai generation failed for ${keyframe._id}:`, err)
+              // Fallback to DALL-E if fal.ai fails
+              try {
+                console.log(`[keyframe] Falling back to DALL-E for ${keyframe._id}`)
+                const localUrl = await googleImagen.generateImage({
+                  prompt: promptText,
+                  aspectRatio: '16:9',
+                })
+                await Keyframe.findByIdAndUpdate(keyframe._id, {
+                  imageUrl: localUrl,
+                  status: 'generated',
+                })
+              } catch (fallbackErr) {
+                console.error(`[keyframe] Fallback also failed for ${keyframe._id}:`, fallbackErr)
+                await Keyframe.findByIdAndUpdate(keyframe._id, { status: 'rejected' })
+              }
+            }
+          })()
+
+          return {
+            id: keyframe._id.toString(),
+            _id: keyframe._id.toString(),
+            section: params.section,
+            position: params.position,
+            variantIndex,
+            promptText,
+            imageUrl: '',
+            status: 'generating',
+          }
+        }),
+      )
+
+      // Update conversation phase to keyframing
+      await Conversation.findByIdAndUpdate(params.conversationId, { status: 'keyframing' })
+
+      return { keyframes }
+    },
+  }),
+
   generateKeyframePrompts: tool({
     description: 'Generate 4 image prompts for a specific keyframe position.',
     parameters: z.object({
@@ -265,12 +665,39 @@ export const orchestratorTools = {
     }),
     execute: async (params) => {
       console.log(`[tool] generateKeyframePrompts:`, params)
+
+      // Fetch conversation for consistency spec and script for visual description
+      const [conversation, script] = await Promise.all([
+        Conversation.findById(params.conversationId),
+        Script.findOne({ conversationId: params.conversationId, section: params.section }),
+      ])
+
+      if (!conversation) throw new Error(`Conversation not found: ${params.conversationId}`)
+      if (!conversation.consistencySpec) throw new Error('Consistency spec not set')
+      if (!script) throw new Error(`Script not found for section: ${params.section}`)
+
+      // Get previous keyframe prompt for continuity
+      let previousKeyframePrompt: string | undefined
+      if (params.previousKeyframeId) {
+        const prevKf = await Keyframe.findById(params.previousKeyframeId)
+        previousKeyframePrompt = prevKf?.promptText
+      }
+
+      const prompts = await generateKeyframePromptsAgent({
+        section: params.section,
+        position: params.position,
+        visualDescription: script.visualDescription,
+        consistencySpec: conversation.consistencySpec,
+        adFormat: conversation.adFormat,
+        previousKeyframePrompt,
+      })
+
       return {
-        prompts: Array.from({ length: 4 }, (_, i) => ({
+        prompts: prompts.map((p, i) => ({
           variantIndex: i,
-          promptText: `[Variant ${i + 1}] Image prompt for ${params.section} ${params.position}...`,
-          negativePrompt: 'blurry, low quality, distorted',
-          style: 'photorealistic',
+          promptText: p.promptText,
+          negativePrompt: p.negativePrompt,
+          style: p.style,
         })),
       }
     },
@@ -292,17 +719,54 @@ export const orchestratorTools = {
     }),
     execute: async (params) => {
       console.log(`[tool] generateKeyframeImages:`, params)
-      return {
-        keyframes: params.prompts.map((p) => ({
-          id: `kf_${params.section}_${params.position}_${p.variantIndex}`,
-          section: params.section,
-          position: params.position,
-          variantIndex: p.variantIndex,
-          promptText: p.promptText,
-          imageUrl: `/uploads/adforge/keyframes/placeholder_${p.variantIndex}.jpg`,
-          status: 'generated',
-        })),
-      }
+
+      // Generate images using Google Imagen (synchronous - returns images directly)
+      const keyframes = await Promise.all(
+        params.prompts.map(async (p) => {
+          // Create keyframe record in DB first
+          const keyframe = await Keyframe.create({
+            conversationId: params.conversationId,
+            section: params.section,
+            position: params.position,
+            variantIndex: p.variantIndex,
+            promptText: p.promptText,
+            imageUrl: '',
+            generationTaskId: '',
+            status: 'generating',
+          })
+
+          // Generate image with Google Imagen (async in background)
+          void (async () => {
+            try {
+              const localUrl = await googleImagen.generateImage({
+                prompt: p.promptText,
+                negative_prompt: p.negativePrompt,
+                aspectRatio: '16:9',
+              })
+              await Keyframe.findByIdAndUpdate(keyframe._id, {
+                imageUrl: localUrl,
+                status: 'generated',
+              })
+            } catch (err) {
+              console.error(`[keyframe] Generation failed for ${keyframe._id}:`, err)
+              await Keyframe.findByIdAndUpdate(keyframe._id, { status: 'rejected' })
+            }
+          })()
+
+          return {
+            id: keyframe._id.toString(),
+            section: params.section,
+            position: params.position,
+            variantIndex: p.variantIndex,
+            promptText: p.promptText,
+            imageUrl: '',
+            status: 'generating',
+            generationTaskId: '',
+          }
+        }),
+      )
+
+      return { keyframes }
     },
   }),
 
@@ -316,10 +780,27 @@ export const orchestratorTools = {
     }),
     execute: async (params) => {
       console.log(`[tool] selectKeyframe:`, params)
+
+      // Mark the selected keyframe
+      await Keyframe.findByIdAndUpdate(params.selectedKeyframeId, { status: 'selected' })
+
+      // Reject other keyframes for the same section/position
+      await Keyframe.updateMany(
+        {
+          conversationId: params.conversationId,
+          section: params.section,
+          position: params.position,
+          _id: { $ne: params.selectedKeyframeId },
+        },
+        { status: 'rejected' },
+      )
+
       const sectionIndex = AD_SECTIONS.indexOf(params.section)
       return {
         success: true,
         selectedKeyframeId: params.selectedKeyframeId,
+        section: params.section,
+        position: params.position,
         nextPosition:
           params.position === 'start'
             ? 'middle'
@@ -346,21 +827,39 @@ export const orchestratorTools = {
     }),
     execute: async (params) => {
       console.log(`[tool] generateTransitionPrompts:`, params)
+
+      // Fetch keyframes and conversation
+      const [startKf, middleKf, endKf, conversation, script] = await Promise.all([
+        Keyframe.findById(params.startKeyframeId),
+        Keyframe.findById(params.middleKeyframeId),
+        Keyframe.findById(params.endKeyframeId),
+        Conversation.findById(params.conversationId),
+        Script.findOne({ conversationId: params.conversationId, section: params.section }),
+      ])
+
+      if (!startKf || !middleKf || !endKf) {
+        throw new Error('One or more keyframes not found')
+      }
+      if (!conversation) throw new Error(`Conversation not found: ${params.conversationId}`)
+      if (!script) throw new Error(`Script not found for section: ${params.section}`)
+
+      const transitions = await writeTransitionPrompts({
+        conversationId: params.conversationId,
+        section: params.section,
+        startKeyframePrompt: startKf.promptText,
+        middleKeyframePrompt: middleKf.promptText,
+        endKeyframePrompt: endKf.promptText,
+        scriptSection: script.copyText,
+        adFormat: conversation.adFormat,
+      })
+
       return {
-        transitions: [
-          {
-            id: `trans_${params.section}_start_middle`,
-            fromPosition: 'start',
-            toPosition: 'middle',
-            promptText: 'Slow zoom in, camera pushes forward gently, maintaining eye contact...',
-          },
-          {
-            id: `trans_${params.section}_middle_end`,
-            fromPosition: 'middle',
-            toPosition: 'end',
-            promptText: 'Pan right to reveal product, smooth dolly movement...',
-          },
-        ],
+        transitions: transitions.map((t) => ({
+          id: t._id.toString(),
+          fromPosition: t.fromPosition,
+          toPosition: t.toPosition,
+          promptText: t.promptText,
+        })),
       }
     },
   }),
@@ -373,22 +872,45 @@ export const orchestratorTools = {
     }),
     execute: async ({ conversationId }) => {
       console.log(`[tool] assembleStoryboard: ${conversationId}`)
+
+      // Fetch all required data
+      const [conversation, scripts, selectedKeyframes, transitionPrompts] = await Promise.all([
+        Conversation.findById(conversationId),
+        Script.find({ conversationId }),
+        Keyframe.find({ conversationId, status: 'selected' }),
+        TransitionPrompt.find({ conversationId }),
+      ])
+
+      if (!conversation) throw new Error(`Conversation not found: ${conversationId}`)
+
+      const durationTargets = conversation.durationAllocation ?? {
+        hook: 5,
+        problem: 13,
+        solution: 14,
+        social_proof: 14,
+        cta: 14,
+      }
+
+      const sections = await assembleStoryboardAgent({
+        conversationId,
+        scripts,
+        selectedKeyframes,
+        transitionPrompts,
+        durationTargets,
+      })
+
+      // Get updated conversation with storyboard
+      const updated = await Conversation.findById(conversationId)
+
       return {
         storyboard: {
-          totalDuration: 60,
-          sections: AD_SECTIONS.map((section, i) => ({
-            section,
-            startTime: i * 12,
-            endTime: (i + 1) * 12,
-            keyframes: {
-              start: { keyframeId: `kf_${section}_start`, imageUrl: '/placeholder.jpg' },
-              middle: { keyframeId: `kf_${section}_middle`, imageUrl: '/placeholder.jpg' },
-              end: { keyframeId: `kf_${section}_end`, imageUrl: '/placeholder.jpg' },
-            },
-            transitions: {
-              startToMiddle: { promptId: `trans_${section}_1`, text: 'Transition 1...' },
-              middleToEnd: { promptId: `trans_${section}_2`, text: 'Transition 2...' },
-            },
+          totalDuration: updated?.storyboard?.totalDuration ?? 60,
+          sections: sections.map((s) => ({
+            section: s.section,
+            startTime: s.startTime,
+            endTime: s.endTime,
+            keyframes: s.keyframes,
+            transitions: s.transitions,
           })),
           status: 'draft',
         },
@@ -403,6 +925,17 @@ export const orchestratorTools = {
     }),
     execute: async ({ conversationId }) => {
       console.log(`[tool] approveStoryboard: ${conversationId}`)
+
+      const updated = await Conversation.findByIdAndUpdate(
+        conversationId,
+        { 'storyboard.status': 'approved' },
+        { new: true },
+      )
+
+      if (!updated) {
+        return { success: false, error: 'Conversation not found' }
+      }
+
       return { success: true, status: 'approved' }
     },
   }),
@@ -420,20 +953,46 @@ export const orchestratorTools = {
     }),
     execute: async (params) => {
       console.log(`[tool] generateVideoPrompts:`, params)
+
+      // Fetch conversation for ad format
+      const conversation = await Conversation.findById(params.conversationId)
+      if (!conversation) throw new Error(`Conversation not found: ${params.conversationId}`)
+
+      // Get target keyframe URL
+      const position = params.transition === 'start_to_middle' ? 'middle' : 'end'
+      const targetKeyframe = await Keyframe.findOne({
+        conversationId: params.conversationId,
+        section: params.section,
+        position,
+        status: 'selected',
+      })
+
+      const { segment, videoPrompt } = await generateVideoPrompt({
+        conversationId: params.conversationId,
+        section: params.section,
+        transition: params.transition,
+        transitionText: params.transitionPrompt,
+        sourceKeyframeUrl: params.sourceKeyframeUrl,
+        targetKeyframeUrl: targetKeyframe?.imageUrl ?? '',
+        durationSeconds: params.durationSeconds,
+        adFormat: conversation.adFormat,
+      })
+
       return {
         videoPrompt: {
-          motionPrompt: params.transitionPrompt,
-          cameraMovement: 'smooth dolly forward',
+          segmentId: segment._id.toString(),
+          motionPrompt: videoPrompt.motionPrompt,
+          cameraMovement: videoPrompt.cameraMovement,
           duration: params.durationSeconds,
           sourceImageUrl: params.sourceKeyframeUrl,
-          model: 'sora-2-pro',
+          model: videoPrompt.model,
         },
       }
     },
   }),
 
   generateVideo: tool({
-    description: 'Generate a video segment using Sora 2 Pro.',
+    description: 'Generate a video segment using Sora.',
     parameters: z.object({
       conversationId: z.string(),
       section: z.enum(['hook', 'problem', 'solution', 'social_proof', 'cta']),
@@ -444,12 +1003,66 @@ export const orchestratorTools = {
     }),
     execute: async (params) => {
       console.log(`[tool] generateVideo:`, params)
-      return {
-        videoSegment: {
-          id: `vid_${params.section}_${params.transition}`,
+
+      const provider = 'sora'
+      const model = 'sora-2-pro'
+
+      // Find or create the video segment
+      let segment = await VideoSegment.findOne({
+        conversationId: params.conversationId,
+        section: params.section,
+        transition: params.transition,
+      })
+
+      if (!segment) {
+        segment = await VideoSegment.create({
+          conversationId: params.conversationId,
           section: params.section,
           transition: params.transition,
-          videoUrl: `/uploads/adforge/videos/placeholder_${params.section}_${params.transition}.mp4`,
+          videoPrompt: params.motionPrompt,
+          sourceKeyframeUrl: params.sourceImageUrl,
+          videoUrl: '',
+          provider,
+          aiModel: model,
+          generationTaskId: '',
+          durationSeconds: params.durationSeconds,
+          status: 'queued',
+        })
+      }
+
+      // Start video generation with Sora
+      const taskId = await sora.generateVideo({
+        prompt: params.motionPrompt,
+        imageUrl: params.sourceImageUrl,
+        duration: params.durationSeconds,
+      })
+
+      await VideoSegment.findByIdAndUpdate(segment._id, {
+        generationTaskId: taskId,
+        status: 'generating',
+      })
+
+      // Poll for completion in background
+      void (async () => {
+        try {
+          const videoUrl = await sora.pollUntilComplete(taskId)
+          const localUrl = await googleImagen.downloadAndSave(videoUrl, 'videos')
+          await VideoSegment.findByIdAndUpdate(segment!._id, {
+            videoUrl: localUrl,
+            status: 'generated',
+          })
+        } catch (err) {
+          console.error(`[video] Sora generation failed for ${segment!._id}:`, err)
+          await VideoSegment.findByIdAndUpdate(segment!._id, { status: 'rejected' })
+        }
+      })()
+
+      return {
+        videoSegment: {
+          id: segment._id.toString(),
+          section: params.section,
+          transition: params.transition,
+          videoUrl: '',
           status: 'generating',
           provider: 'sora',
           model: 'sora-2-pro',
@@ -460,32 +1073,52 @@ export const orchestratorTools = {
 }
 
 // Copilot result interface
-export interface CopilotResultHandle {
-  readonly text: PromiseLike<string>
-  readonly steps: PromiseLike<unknown[]>
+export interface CopilotResult {
+  text: string
+  steps: unknown[]
 }
 
-// Main orchestrator function
-export function runCopilot(params: {
+// Main orchestrator function - now async
+export async function runCopilot(params: {
   conversationId: string
   messages: Array<{ role: 'user' | 'assistant'; content: string }>
+  campaignContext?: string | null
   onChunk?: (chunk: string) => void
-}): CopilotResultHandle {
+}): Promise<CopilotResult> {
+  console.log('[copilot] Starting with conversationId:', params.conversationId)
+  console.log('[copilot] ANTHROPIC_API_KEY available:', !!process.env['ANTHROPIC_API_KEY'])
+  console.log('[copilot] Campaign context provided:', !!params.campaignContext)
+
+  // Build system prompt with campaign context if available
+  let systemPrompt = SYSTEM_PROMPT
+  if (params.campaignContext) {
+    systemPrompt = `${SYSTEM_PROMPT}
+
+---
+
+${params.campaignContext}`
+  }
+
   const result = streamText({
     model: anthropic('claude-sonnet-4-20250514'),
-    system: SYSTEM_PROMPT,
+    system: systemPrompt,
     messages: params.messages,
     tools: orchestratorTools,
     maxSteps: 10,
-    onChunk: ({ chunk }) => {
-      if (chunk.type === 'text-delta' && params.onChunk) {
-        params.onChunk(chunk.textDelta)
-      }
-    },
   })
 
-  return {
-    text: result.text,
-    steps: result.steps,
+  // Consume the stream properly
+  let fullText = ''
+  for await (const chunk of result.textStream) {
+    fullText += chunk
+    if (params.onChunk) {
+      params.onChunk(chunk)
+    }
   }
+
+  // Get steps after stream is consumed
+  const steps = await result.steps
+
+  console.log('[copilot] Completed, text length:', fullText.length)
+  return { text: fullText, steps }
 }

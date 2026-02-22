@@ -18,9 +18,15 @@ const envSchema = z.object({
   ANTHROPIC_API_KEY: z.string().default(''),
   OPENAI_API_KEY: z.string().optional(),
 
-  // AdForge — Image/Video Generation (Freepik)
+  // AdForge — Image Generation (Google Imagen)
+  GOOGLE_API_KEY: z.string().default(''),
+
+  // AdForge — Freepik API
   FREEPIK_API_KEY: z.string().default(''),
-  FREEPIK_WEBHOOK_BASE_URL: z.string().url().optional(),
+  FREEPIK_WEBHOOK_BASE_URL: z.string().optional(),
+
+  // AdForge — fal.ai API (for Flux Pro hyper-realistic images)
+  FAL_API_KEY: z.string().default(''),
 })
 
 export const env = envSchema.parse(process.env)

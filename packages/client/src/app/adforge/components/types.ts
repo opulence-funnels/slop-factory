@@ -45,6 +45,15 @@ export interface Script {
   status: 'draft' | 'approved'
 }
 
+export interface HookOption {
+  _id: string
+  index: number
+  hookText: string
+  style: string
+  rationale: string
+  status: 'pending' | 'selected' | 'rejected'
+}
+
 export interface Keyframe {
   _id: string
   section: AdSection
@@ -83,9 +92,26 @@ export interface Conversation {
   phase: number
   durationAllocation: Record<AdSection, number>
   consistencySpec: null | {
-    avatarSpec: { fullDescription: string }
-    environmentSpec: { fullDescription: string }
+    avatarSpec: {
+      age?: string
+      gender?: string
+      hairColor?: string
+      hairStyle?: string
+      skinTone?: string
+      clothing?: string
+      distinguishingFeatures?: string
+      fullDescription: string
+    }
+    environmentSpec: {
+      location?: string
+      timeOfDay?: string
+      lighting?: string
+      keyProps?: string[]
+      colorScheme?: string[]
+      fullDescription: string
+    }
     visualStyle: string
+    colorPalette?: string[]
     status: 'draft' | 'locked'
   }
   storyboard: null | {
@@ -114,6 +140,7 @@ export type Phase = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8
 export interface CanvasState {
   offer: Offer | null
   avatar: Avatar | null
+  hookOptions: HookOption[]
   scripts: Script[]
   keyframes: Keyframe[]
   transitions: TransitionPromptDoc[]
