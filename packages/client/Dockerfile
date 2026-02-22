@@ -25,7 +25,6 @@ WORKDIR /app
 
 COPY --from=build /app/packages/client/.next/standalone ./
 COPY --from=build /app/packages/client/.next/static ./packages/client/.next/static
-COPY --from=build /app/packages/client/public ./packages/client/public 2>/dev/null || true
 
 EXPOSE 3000
 

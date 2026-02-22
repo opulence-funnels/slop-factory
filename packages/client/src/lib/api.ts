@@ -5,10 +5,17 @@ import type {
   TextContent,
 } from '@slop-factory/shared'
 
-const API_BASE = '/api'
+function getApiBase(): string {
+  // Server-side (SSR): use the internal API URL to reach Express directly
+  if (typeof window === 'undefined') {
+    return (process.env.INTERNAL_API_URL ?? 'http://localhost:4000') + '/api'
+  }
+  // Client-side: use relative URL (proxied via Next.js rewrites)
+  return '/api'
+}
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(`${getApiBase()}${path}`, {
     headers: {
       'Content-Type': 'application/json',
       ...options?.headers,
@@ -36,7 +43,7 @@ export async function uploadMedia(
     formData.append('files', file)
   }
 
-  const res = await fetch(`${API_BASE}/media/upload`, {
+  const res = await fetch(`${getApiBase()}/media/upload`, {
     method: 'POST',
     body: formData,
     // Don't set Content-Type — browser sets multipart boundary automatically
