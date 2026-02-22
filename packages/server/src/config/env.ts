@@ -10,6 +10,10 @@ const envSchema = z.object({
   NODE_ENV: z
     .enum(['development', 'production', 'test'])
     .default('development'),
+  ANTHROPIC_API_KEY: z.string().default(''),
+  FREEPIK_API_KEY: z.string().default(''),
+  OPENAI_API_KEY: z.string().optional(),
+  FREEPIK_WEBHOOK_BASE_URL: z.string().url().optional(),
 })
 
 export const env = envSchema.parse(process.env)

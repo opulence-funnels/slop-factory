@@ -12,7 +12,9 @@
     "lint": "echo 'TODO: add linter'"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^1.2.0",
     "@slop-factory/shared": "workspace:*",
+    "ai": "^4.3.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.0",
     "express": "^4.21.0",
