@@ -1,6 +1,8 @@
 import { listMedia } from '@/lib/api'
 import { MediaType } from '@slop-factory/shared'
 
+export const dynamic = 'force-dynamic'
+
 export default async function HomePage() {
   let mediaItems: Awaited<ReturnType<typeof listMedia>>['data'] = []
   let error: string | null = null
