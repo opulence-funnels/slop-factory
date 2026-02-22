@@ -6,6 +6,7 @@ import { connectDatabase } from './config/db.js'
 import { errorHandler } from './middleware/error.js'
 import mediaRoutes from './routes/media.routes.js'
 import textRoutes from './routes/text.routes.js'
+import adforgeRoutes from './routes/adforge.routes.js'
 import chatRoutes from './routes/chat.routes.js'
 
 const app = express()
@@ -22,7 +23,8 @@ app.use('/uploads', express.static(uploadDir))
 // Routes
 app.use('/api/media', mediaRoutes)
 app.use('/api/text', textRoutes)
-app.use('/api/adforge', chatRoutes)
+app.use('/api/adforge', adforgeRoutes)
+app.use('/api/adforge/chat', chatRoutes)
 
 // Health check
 app.get('/api/health', (_req, res) => {

@@ -14,13 +14,13 @@ const envSchema = z.object({
     .enum(['development', 'production', 'test'])
     .default('development'),
 
-  // AdForge — AI (optional for local dev, required in production)
-  ANTHROPIC_API_KEY: z.string().optional(),
-  OPENAI_API_KEY: z.string().optional(), // For Sora 2 Pro video generation
+  // AdForge — AI
+  ANTHROPIC_API_KEY: z.string().default(''),
+  OPENAI_API_KEY: z.string().optional(),
 
-  // AdForge — Image Generation (placeholder - update based on provider)
-  IMAGE_GEN_API_KEY: z.string().optional(),
-  IMAGE_GEN_BASE_URL: z.string().url().optional(),
+  // AdForge — Image/Video Generation (Freepik)
+  FREEPIK_API_KEY: z.string().default(''),
+  FREEPIK_WEBHOOK_BASE_URL: z.string().url().optional(),
 })
 
 export const env = envSchema.parse(process.env)

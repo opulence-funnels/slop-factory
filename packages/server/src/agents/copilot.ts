@@ -1,5 +1,4 @@
-import { streamText } from 'ai'
-import { zodSchema } from '@ai-sdk/provider-utils'
+import { streamText, tool } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { z } from 'zod'
 
@@ -57,17 +56,15 @@ Every ad has 5 sequential sections:
 ## Canvas Updates
 When you complete a tool call that produces visual content (offer card, avatar brief, scripts, keyframes, etc.), mention that the canvas has been updated so the user knows to look at the right panel.`
 
-// Tool definitions
+// Tool definitions using AI SDK v4 syntax
 export const orchestratorTools = {
   // === State Management Tools ===
-  getConversationState: {
+  getConversationState: tool({
     description: 'Get the current conversation state including phase, offer, avatar, scripts, keyframes, etc.',
-    inputSchema: zodSchema(
-      z.object({
-        conversationId: z.string().describe('The conversation ID'),
-      })
-    ),
-    execute: async ({ conversationId }: { conversationId: string }) => {
+    parameters: z.object({
+      conversationId: z.string().describe('The conversation ID'),
+    }),
+    execute: async ({ conversationId }) => {
       console.log(`[tool] getConversationState: ${conversationId}`)
       return {
         phase: 'setup',
@@ -80,50 +77,41 @@ export const orchestratorTools = {
         storyboard: null,
       }
     },
-  },
+  }),
 
-  updateConversationPhase: {
+  updateConversationPhase: tool({
     description: 'Update the conversation phase after completing a workflow step',
-    inputSchema: zodSchema(
-      z.object({
-        conversationId: z.string(),
-        phase: z.enum([
-          'setup',
-          'brief',
-          'scripting',
-          'consistency',
-          'keyframing',
-          'storyboarding',
-          'generating_video',
-          'reviewing',
-          'exported',
-        ]),
-      })
-    ),
-    execute: async ({ conversationId, phase }: { conversationId: string; phase: string }) => {
+    parameters: z.object({
+      conversationId: z.string(),
+      phase: z.enum([
+        'setup',
+        'brief',
+        'scripting',
+        'consistency',
+        'keyframing',
+        'storyboarding',
+        'generating_video',
+        'reviewing',
+        'exported',
+      ]),
+    }),
+    execute: async ({ conversationId, phase }) => {
       console.log(`[tool] updateConversationPhase: ${conversationId} -> ${phase}`)
       return { success: true, phase }
     },
-  },
+  }),
 
   // === Offer & Avatar Tools ===
-  buildOffer: {
+  buildOffer: tool({
     description:
       'Generate a structured offer using the Hormozi Value Equation. Use when user describes their product.',
-    inputSchema: zodSchema(
-      z.object({
-        productName: z.string().describe('Name of the product or service'),
-        productDescription: z.string().describe('Description of what the product does'),
-        targetAudience: z.string().describe('Who the product is for'),
-        userNotes: z.string().optional().describe('Any additional context from the user'),
-      })
-    ),
-    execute: async (params: {
-      productName: string
-      productDescription: string
-      targetAudience: string
-      userNotes?: string
-    }) => {
+    parameters: z.object({
+      productName: z.string().describe('Name of the product or service'),
+      productDescription: z.string().describe('Description of what the product does'),
+      targetAudience: z.string().describe('Who the product is for'),
+      userNotes: z.string().optional().describe('Any additional context from the user'),
+    }),
+    execute: async (params) => {
       console.log(`[tool] buildOffer:`, params)
       return {
         id: 'offer_placeholder',
@@ -137,25 +125,18 @@ export const orchestratorTools = {
         keySellingPoints: ['Point 1', 'Point 2', 'Point 3'],
       }
     },
-  },
+  }),
 
-  buildAvatar: {
+  buildAvatar: tool({
     description:
       'Generate a comprehensive psychological avatar brief. Use after offer is created.',
-    inputSchema: zodSchema(
-      z.object({
-        offerId: z.string().describe('The offer ID to base the avatar on'),
-        targetDescription: z.string().describe('Description of the target customer'),
-        industry: z.string().describe('Industry or niche'),
-        userNotes: z.string().optional(),
-      })
-    ),
-    execute: async (params: {
-      offerId: string
-      targetDescription: string
-      industry: string
-      userNotes?: string
-    }) => {
+    parameters: z.object({
+      offerId: z.string().describe('The offer ID to base the avatar on'),
+      targetDescription: z.string().describe('Description of the target customer'),
+      industry: z.string().describe('Industry or niche'),
+      userNotes: z.string().optional(),
+    }),
+    execute: async (params) => {
       console.log(`[tool] buildAvatar:`, params)
       return {
         id: 'avatar_placeholder',
@@ -177,35 +158,27 @@ export const orchestratorTools = {
         fullBriefMd: '# Avatar Brief\n\nPlaceholder content...',
       }
     },
-  },
+  }),
 
   // === Script Tools ===
-  generateScript: {
+  generateScript: tool({
     description: 'Generate ad copy for all 5 sections based on offer, avatar, and format.',
-    inputSchema: zodSchema(
-      z.object({
-        conversationId: z.string(),
-        offerId: z.string(),
-        avatarId: z.string(),
-        adFormat: z.enum(['ugc', 'story_movie']),
-        durationTargets: z
-          .object({
-            hook: z.number(),
-            problem: z.number(),
-            solution: z.number(),
-            social_proof: z.number(),
-            cta: z.number(),
-          })
-          .optional(),
-      })
-    ),
-    execute: async (params: {
-      conversationId: string
-      offerId: string
-      avatarId: string
-      adFormat: string
-      durationTargets?: Record<string, number>
-    }) => {
+    parameters: z.object({
+      conversationId: z.string(),
+      offerId: z.string(),
+      avatarId: z.string(),
+      adFormat: z.enum(['ugc', 'story_movie']),
+      durationTargets: z
+        .object({
+          hook: z.number(),
+          problem: z.number(),
+          solution: z.number(),
+          social_proof: z.number(),
+          cta: z.number(),
+        })
+        .optional(),
+    }),
+    execute: async (params) => {
       console.log(`[tool] generateScript:`, params)
       return {
         scripts: AD_SECTIONS.map((section) => ({
@@ -218,33 +191,29 @@ export const orchestratorTools = {
         })),
       }
     },
-  },
+  }),
 
-  approveScript: {
+  approveScript: tool({
     description: 'Mark a script section as approved.',
-    inputSchema: zodSchema(
-      z.object({
-        scriptId: z.string(),
-        section: z.enum(['hook', 'problem', 'solution', 'social_proof', 'cta']),
-      })
-    ),
-    execute: async ({ scriptId, section }: { scriptId: string; section: string }) => {
+    parameters: z.object({
+      scriptId: z.string(),
+      section: z.enum(['hook', 'problem', 'solution', 'social_proof', 'cta']),
+    }),
+    execute: async ({ scriptId, section }) => {
       console.log(`[tool] approveScript: ${scriptId} (${section})`)
       return { success: true, scriptId, section, status: 'approved' }
     },
-  },
+  }),
 
   // === Consistency Tools ===
-  generateConsistencySpec: {
+  generateConsistencySpec: tool({
     description: 'Generate avatar appearance and environment specs for visual consistency.',
-    inputSchema: zodSchema(
-      z.object({
-        conversationId: z.string(),
-        avatarId: z.string(),
-        adFormat: z.enum(['ugc', 'story_movie']),
-      })
-    ),
-    execute: async (params: { conversationId: string; avatarId: string; adFormat: string }) => {
+    parameters: z.object({
+      conversationId: z.string(),
+      avatarId: z.string(),
+      adFormat: z.enum(['ugc', 'story_movie']),
+    }),
+    execute: async (params) => {
       console.log(`[tool] generateConsistencySpec:`, params)
       return {
         avatarSpec: {
@@ -272,38 +241,29 @@ export const orchestratorTools = {
         status: 'draft',
       }
     },
-  },
+  }),
 
-  lockConsistency: {
+  lockConsistency: tool({
     description: 'Lock the consistency spec after user approval. No changes allowed after this.',
-    inputSchema: zodSchema(
-      z.object({
-        conversationId: z.string(),
-      })
-    ),
-    execute: async ({ conversationId }: { conversationId: string }) => {
+    parameters: z.object({
+      conversationId: z.string(),
+    }),
+    execute: async ({ conversationId }) => {
       console.log(`[tool] lockConsistency: ${conversationId}`)
       return { success: true, status: 'locked' }
     },
-  },
+  }),
 
   // === Keyframe Tools ===
-  generateKeyframePrompts: {
+  generateKeyframePrompts: tool({
     description: 'Generate 4 image prompts for a specific keyframe position.',
-    inputSchema: zodSchema(
-      z.object({
-        conversationId: z.string(),
-        section: z.enum(['hook', 'problem', 'solution', 'social_proof', 'cta']),
-        position: z.enum(['start', 'middle', 'end']),
-        previousKeyframeId: z.string().optional().describe('ID of the previously selected keyframe for continuity'),
-      })
-    ),
-    execute: async (params: {
-      conversationId: string
-      section: string
-      position: string
-      previousKeyframeId?: string
-    }) => {
+    parameters: z.object({
+      conversationId: z.string(),
+      section: z.enum(['hook', 'problem', 'solution', 'social_proof', 'cta']),
+      position: z.enum(['start', 'middle', 'end']),
+      previousKeyframeId: z.string().optional().describe('ID of the previously selected keyframe for continuity'),
+    }),
+    execute: async (params) => {
       console.log(`[tool] generateKeyframePrompts:`, params)
       return {
         prompts: Array.from({ length: 4 }, (_, i) => ({
@@ -314,30 +274,23 @@ export const orchestratorTools = {
         })),
       }
     },
-  },
+  }),
 
-  generateKeyframeImages: {
+  generateKeyframeImages: tool({
     description: 'Generate images from prompts using the image generation API.',
-    inputSchema: zodSchema(
-      z.object({
-        conversationId: z.string(),
-        section: z.enum(['hook', 'problem', 'solution', 'social_proof', 'cta']),
-        position: z.enum(['start', 'middle', 'end']),
-        prompts: z.array(
-          z.object({
-            variantIndex: z.number(),
-            promptText: z.string(),
-            negativePrompt: z.string().optional(),
-          })
-        ),
-      })
-    ),
-    execute: async (params: {
-      conversationId: string
-      section: string
-      position: string
-      prompts: Array<{ variantIndex: number; promptText: string; negativePrompt?: string }>
-    }) => {
+    parameters: z.object({
+      conversationId: z.string(),
+      section: z.enum(['hook', 'problem', 'solution', 'social_proof', 'cta']),
+      position: z.enum(['start', 'middle', 'end']),
+      prompts: z.array(
+        z.object({
+          variantIndex: z.number(),
+          promptText: z.string(),
+          negativePrompt: z.string().optional(),
+        })
+      ),
+    }),
+    execute: async (params) => {
       console.log(`[tool] generateKeyframeImages:`, params)
       return {
         keyframes: params.prompts.map((p) => ({
@@ -351,24 +304,17 @@ export const orchestratorTools = {
         })),
       }
     },
-  },
+  }),
 
-  selectKeyframe: {
+  selectKeyframe: tool({
     description: 'Mark a keyframe as selected and reject the others.',
-    inputSchema: zodSchema(
-      z.object({
-        conversationId: z.string(),
-        selectedKeyframeId: z.string(),
-        section: z.enum(['hook', 'problem', 'solution', 'social_proof', 'cta']),
-        position: z.enum(['start', 'middle', 'end']),
-      })
-    ),
-    execute: async (params: {
-      conversationId: string
-      selectedKeyframeId: string
-      section: AdSection
-      position: 'start' | 'middle' | 'end'
-    }) => {
+    parameters: z.object({
+      conversationId: z.string(),
+      selectedKeyframeId: z.string(),
+      section: z.enum(['hook', 'problem', 'solution', 'social_proof', 'cta']),
+      position: z.enum(['start', 'middle', 'end']),
+    }),
+    execute: async (params) => {
       console.log(`[tool] selectKeyframe:`, params)
       const sectionIndex = AD_SECTIONS.indexOf(params.section)
       return {
@@ -386,27 +332,19 @@ export const orchestratorTools = {
             : null,
       }
     },
-  },
+  }),
 
   // === Transition Tools ===
-  generateTransitionPrompts: {
+  generateTransitionPrompts: tool({
     description: 'Generate motion/camera descriptions for transitions between keyframes.',
-    inputSchema: zodSchema(
-      z.object({
-        conversationId: z.string(),
-        section: z.enum(['hook', 'problem', 'solution', 'social_proof', 'cta']),
-        startKeyframeId: z.string(),
-        middleKeyframeId: z.string(),
-        endKeyframeId: z.string(),
-      })
-    ),
-    execute: async (params: {
-      conversationId: string
-      section: string
-      startKeyframeId: string
-      middleKeyframeId: string
-      endKeyframeId: string
-    }) => {
+    parameters: z.object({
+      conversationId: z.string(),
+      section: z.enum(['hook', 'problem', 'solution', 'social_proof', 'cta']),
+      startKeyframeId: z.string(),
+      middleKeyframeId: z.string(),
+      endKeyframeId: z.string(),
+    }),
+    execute: async (params) => {
       console.log(`[tool] generateTransitionPrompts:`, params)
       return {
         transitions: [
@@ -425,17 +363,15 @@ export const orchestratorTools = {
         ],
       }
     },
-  },
+  }),
 
   // === Storyboard Tools ===
-  assembleStoryboard: {
+  assembleStoryboard: tool({
     description: 'Assemble all keyframes and transitions into a unified storyboard with timing.',
-    inputSchema: zodSchema(
-      z.object({
-        conversationId: z.string(),
-      })
-    ),
-    execute: async ({ conversationId }: { conversationId: string }) => {
+    parameters: z.object({
+      conversationId: z.string(),
+    }),
+    execute: async ({ conversationId }) => {
       console.log(`[tool] assembleStoryboard: ${conversationId}`)
       return {
         storyboard: {
@@ -458,42 +394,31 @@ export const orchestratorTools = {
         },
       }
     },
-  },
+  }),
 
-  approveStoryboard: {
+  approveStoryboard: tool({
     description: 'Approve the storyboard to proceed to video generation.',
-    inputSchema: zodSchema(
-      z.object({
-        conversationId: z.string(),
-      })
-    ),
-    execute: async ({ conversationId }: { conversationId: string }) => {
+    parameters: z.object({
+      conversationId: z.string(),
+    }),
+    execute: async ({ conversationId }) => {
       console.log(`[tool] approveStoryboard: ${conversationId}`)
       return { success: true, status: 'approved' }
     },
-  },
+  }),
 
   // === Video Tools ===
-  generateVideoPrompts: {
+  generateVideoPrompts: tool({
     description: 'Convert transition descriptions into API-ready video generation parameters.',
-    inputSchema: zodSchema(
-      z.object({
-        conversationId: z.string(),
-        section: z.enum(['hook', 'problem', 'solution', 'social_proof', 'cta']),
-        transition: z.enum(['start_to_middle', 'middle_to_end']),
-        sourceKeyframeUrl: z.string(),
-        transitionPrompt: z.string(),
-        durationSeconds: z.number(),
-      })
-    ),
-    execute: async (params: {
-      conversationId: string
-      section: string
-      transition: string
-      sourceKeyframeUrl: string
-      transitionPrompt: string
-      durationSeconds: number
-    }) => {
+    parameters: z.object({
+      conversationId: z.string(),
+      section: z.enum(['hook', 'problem', 'solution', 'social_proof', 'cta']),
+      transition: z.enum(['start_to_middle', 'middle_to_end']),
+      sourceKeyframeUrl: z.string(),
+      transitionPrompt: z.string(),
+      durationSeconds: z.number(),
+    }),
+    execute: async (params) => {
       console.log(`[tool] generateVideoPrompts:`, params)
       return {
         videoPrompt: {
@@ -505,28 +430,19 @@ export const orchestratorTools = {
         },
       }
     },
-  },
+  }),
 
-  generateVideo: {
+  generateVideo: tool({
     description: 'Generate a video segment using Sora 2 Pro.',
-    inputSchema: zodSchema(
-      z.object({
-        conversationId: z.string(),
-        section: z.enum(['hook', 'problem', 'solution', 'social_proof', 'cta']),
-        transition: z.enum(['start_to_middle', 'middle_to_end']),
-        sourceImageUrl: z.string(),
-        motionPrompt: z.string(),
-        durationSeconds: z.number(),
-      })
-    ),
-    execute: async (params: {
-      conversationId: string
-      section: string
-      transition: string
-      sourceImageUrl: string
-      motionPrompt: string
-      durationSeconds: number
-    }) => {
+    parameters: z.object({
+      conversationId: z.string(),
+      section: z.enum(['hook', 'problem', 'solution', 'social_proof', 'cta']),
+      transition: z.enum(['start_to_middle', 'middle_to_end']),
+      sourceImageUrl: z.string(),
+      motionPrompt: z.string(),
+      durationSeconds: z.number(),
+    }),
+    execute: async (params) => {
       console.log(`[tool] generateVideo:`, params)
       return {
         videoSegment: {
@@ -540,10 +456,10 @@ export const orchestratorTools = {
         },
       }
     },
-  },
+  }),
 }
 
-// Copilot result interface - expose only what we need
+// Copilot result interface
 export interface CopilotResultHandle {
   readonly text: PromiseLike<string>
   readonly steps: PromiseLike<unknown[]>
@@ -560,14 +476,14 @@ export function runCopilot(params: {
     system: SYSTEM_PROMPT,
     messages: params.messages,
     tools: orchestratorTools,
+    maxSteps: 10,
     onChunk: ({ chunk }) => {
       if (chunk.type === 'text-delta' && params.onChunk) {
-        params.onChunk(chunk.text)
+        params.onChunk(chunk.textDelta)
       }
     },
   })
 
-  // Return only the properties we need, typed explicitly
   return {
     text: result.text,
     steps: result.steps,
